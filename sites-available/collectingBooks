@@ -1,0 +1,101 @@
+
+#設定 server 名稱和伺服器根目錄
+server {
+	server_name 3.38.73.63 onlineproject.dev;
+	root /home/ubuntu/project/collectingBooks/public;
+
+	# 設定首頁
+	#index index.html index.htm index.php;
+
+	# 設定網站編碼
+	charset utf-8;
+
+	# prerender.io
+	location / {
+		if ($prerender = 1) {
+			rewrite (.*) /prerenderio last;
+		}
+		index index.html index.htm index.php;
+		try_files $uri $uri/ /index.php?$query_string;
+
+		proxy_set_header Host $SERVER_NAME;
+		proxy_set_header Connection "";
+		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+		proxy_hide_header Cache-Control;
+		add_header Cache-Control "public,max-age=31536000";
+
+		#resolve using Google's DNS server to force DNS resolution and prevent caching of IPs
+		resolver 8.8.8.8 8.8.4.4;
+
+		#setting backend as a variable forces DNS resolution since nginx caches IPs and doesnt play well with load balancing
+		#set $backend "3.38.73.63";
+
+		rewrite .* $uri break;
+		#proxy_pass http://$backend;
+		#proxy_pass http://onlineproject.dev;
+	}
+
+	location /prerenderio {
+		if ($prerender = 0) {
+			return 404;
+		}
+
+		proxy_set_header X-Prerender-Token E1kXxmPXcycc8vTqg9hu;
+
+		proxy_hide_header Cache-Control;
+		add_header Cache-Control "private,max-age=600,must-revalidate";
+
+		#resolve using Google's DNS server to force DNS resolution and prevent caching of IPs
+		resolver 8.8.8.8 8.8.4.4;
+		set $prerender_host "service.prerender.io";
+		proxy_pass https://$prerender_host;
+		rewrite .* /$scheme://$host$request_uri? break;
+	}
+
+	# 前後端分離的後端routes
+	location ~ ^/api {
+		rewrite ^ /index.php;
+	}
+
+	# 設定網站圖示和機器人檔案位置
+#	location = /favicon.ico { access_log off; log_not_found off; }
+#	location = /robots.txt  { access_log off; log_not_found off; }
+
+
+	# 設定 404 錯誤頁面
+	error_page 404 /index.php;
+
+	# 設定 PHP-FPM 位置和 FastCGI 相關參數 php proxy_pass
+	location ~ \.php$ {
+		root /home/ubuntu/project/collectingBooks/public;
+		fastcgi_pass unix:/var/run/php/php8.1-fpm.sock; #或127.0.0.1:9000 port
+		fastcgi_index index.php;
+		fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+		include fastcgi_params;
+	}
+
+	# 防止訪問 .well-known 目錄下的檔案
+	location ~ /\.(?!well-known).* {
+		deny all;
+	}
+
+	listen 443 ssl; # managed by Certbot
+		ssl_certificate /etc/letsencrypt/live/onlineproject.dev/fullchain.pem; # managed by Certbot
+		ssl_certificate_key /etc/letsencrypt/live/onlineproject.dev/privkey.pem; # managed by Certbot
+		include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+		ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+}
+server {
+	if ($host = onlineproject.dev) {
+		return 301 https://$host$request_uri;
+	} # managed by Certbot
+
+
+	listen 80;
+	server_name 3.38.73.63 onlineproject.dev;
+	return 404; # managed by Certbot
+
+
+}
